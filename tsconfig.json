@@ -1,0 +1,13 @@
+{
+  "compileOnSave": true,
+  "compilerOptions": {
+    "outDir": "./dist",
+    "target": "es6",
+    "noImplicitAny": false,
+    "jsx": "preserve",
+    "sourceMap": false
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}
