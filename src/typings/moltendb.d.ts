@@ -63,11 +63,12 @@ declare namespace MDB {
      * Deletes a connection
      *
      * @param collectionName The name of the collection to delete
+     * @param deleteStores Whether or not to deleted the associated stores
      *
      * @returns A promise that resolves to true if a collection was deleted or
      *   false if the collection did not exist
      */
-    deleteCollection: (collectionName: string) => Promise<boolean>
+    deleteCollection: (collectionName: string, deleteStores: boolean) => Promise<boolean>
   };
 
   export interface MoltenInternalInstance {
@@ -169,14 +170,14 @@ declare namespace MDB {
      *
      * @returns A Promise that will resolve to the retrieved data
      */
-    read: (filter?: Filter, options: FilterOptions) => Promise<Result>,
+    read: (filter?: Filter, options?: FilterOptions) => Promise<Result>,
 
     /**
      * Get the number of items that would be returned by a query
      *
      * @returns A Promise that resolves to the number of rows
      */
-    count: (filter: Filter) => Promise<number>,
+    count: (filter?: Filter) => Promise<number>,
 
     /**
      * Update an item in the storage

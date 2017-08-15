@@ -51,23 +51,25 @@ export const MoltenDB = (options) => {
         if (!storageOptions) {
             return Promise.reject(new Error(`Storage ${storage} does not exist`));
         }
-        if (storageOptions.options.keepConnection && connections[storage].connection) {
-            return Promise.resolve(connection[storage].connection);
+        if (!storageOptions.closeConnection && connections[storage]) {
+            return Promise.resolve(connections[storage].connection);
         }
         else {
             let promise = storageOptions.connect(storageOptions.options);
-            if (storageOptions.options.keepConnection) {
+            if (!storageOptions.closeConnection) {
                 // Clear the timeout if it for some reason exists
-                if (typeof connections[storage].timeout !== 'undefined') {
+                if (connections[storage] && typeof connections[storage].timeout !== 'undefined') {
                     clearTimeout(connections[storage].timeout);
                 }
                 promise = promise.then((connection) => {
-                    connections[storage].connection = connection;
-                    if (storageOptions.options.connectionTimeout) {
+                    connections[storage] = {
+                        connection
+                    };
+                    if (storageOptions.connectionTimeout) {
                         connections[storage].timeout = setTimeout(() => {
                             delete connections[storage].connection;
                             delete connections[storage].timeout;
-                        }, storageOptions.options.connectionTimeout * 1000);
+                        }, storageOptions.connectionTimeout * 1000);
                     }
                     return connection;
                 });
@@ -164,6 +166,9 @@ export const MoltenDB = (options) => {
                 }
             },
             read: (filter, options) => {
+                if (['undefined', 'object'].indexOf(typeof filter) === -1) {
+                    return Promise.reject(new Error('Invalid filter'));
+                }
                 if (storageKeys.length === 1) {
                     return storageConnection(collectionOptions.storage[storageKeys[0]].type)
                         .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]]))
@@ -188,6 +193,9 @@ export const MoltenDB = (options) => {
                 }
             },
             count: (filter) => {
+                if (['undefined', 'object'].indexOf(typeof filter) === -1) {
+                    return Promise.reject(new Error('Invalid filter'));
+                }
                 if (storageKeys.length === 1) {
                     return storageConnection(collectionOptions.storage[storageKeys[0]].type)
                         .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]]))
@@ -197,6 +205,9 @@ export const MoltenDB = (options) => {
                 }
             },
             update: (data, filter) => {
+                if (['undefined', 'object'].indexOf(typeof filter) === -1) {
+                    return Promise.reject(new Error('Invalid filter'));
+                }
                 if (storageKeys.length === 1) {
                     return storageConnection(collectionOptions.storage[storageKeys[0]].type)
                         .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]].name))
@@ -206,6 +217,9 @@ export const MoltenDB = (options) => {
                 }
             },
             delete: (filter) => {
+                if (['undefined', 'object'].indexOf(typeof filter) === -1) {
+                    return Promise.reject(new Error('Invalid filter'));
+                }
                 if (storageKeys.length === 1) {
                     return storageConnection(collectionOptions.storage[storageKeys[0]].type)
                         .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]].name))
@@ -330,12 +344,15 @@ export const MoltenDB = (options) => {
                 updateCollection: (collectionOptions) => {
                     // TODO
                 },
-                deleteCollection: (name) => {
+                deleteCollection: (name, deleteStores) => {
                     return getCollectionOptions(name).then((collectionOptions) => {
                         if (typeof collectionOptions === 'undefined') {
                             return Promise.resolve(false);
                         }
                         let deletes = [];
+                        if (!deleteStores) {
+                            return Promise.resolve(true);
+                        }
                         Object.keys(collectionOptions.storage).forEach((storageKey) => {
                             const storage = collectionOptions.storage[storageKey];
                             const options = createStoreOptions(collectionOptions, storageKey);
