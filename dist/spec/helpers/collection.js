@@ -1,19 +1,19 @@
-import fakeStorage from './fakeStorage';
+import createJsonCrudDatabase from 'molten-storage-json-crud';
 export const createTestMoltenOptions = () => {
     return {
         storage: {
             testStorage: {
-                connect: fakeStorage(),
+                connect: createJsonCrudDatabase,
                 options: {
-                    store: 'testStorage',
-                    persist: true
+                    baseFolder: false,
+                    keepConnected: true
                 }
             },
             secondStorage: {
-                connect: fakeStorage(),
+                connect: createJsonCrudDatabase,
                 options: {
-                    store: 'secondStorage',
-                    persist: true
+                    baseFolder: false,
+                    keepConnected: true
                 }
             }
         },
