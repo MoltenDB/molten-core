@@ -180,6 +180,10 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
     // and get each store on creation of the collection instance.
 
     return {
+      options: (): MDB.CollectionOptions => {
+        /// TODO check if this is the best way
+        return JSON.parse(JSON.stringify(collectionOptions));
+      },
       create: (data: MDB.Data | MDB.Data[]): Promise<MDB.Id[]> => {
         if (storageKeys.length === 1) {
           return storageConnection(collectionOptions.storage[storageKeys[0]].type)

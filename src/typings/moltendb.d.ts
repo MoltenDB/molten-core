@@ -22,7 +22,7 @@ declare namespace MDB {
      * @param name The name of the collection to get a collection instance to
      *
      * @returns A promise that will resolve to a collection instance of the
-     *   specified collection
+     *   specified collection, or `undefined` if the collection does not exist
      */
     collection: (name: string) => Promise<CollectionInstance>,
 
@@ -151,6 +151,12 @@ declare namespace MDB {
 
   /// @TODO should be able to access collection options from instance
   export interface CollectionInstance {
+    /**
+     * Gets options for the collection
+     *
+     * @returns The options for the collection
+     */
+    options: () => CollectionOptions,
     /**
      * Creates a new item / new items in the storage
      *

@@ -10,6 +10,16 @@ describe('MoltenDB collection instance', function () {
                     this.collection = collection;
                 });
             });
+            describe('options()', () => {
+                it('should return the collection options', () => {
+                    expect(this.collection.options()).toEqual(testCollection);
+                });
+                it('should not taint the collection options if the returned value is changed', () => {
+                    let options = this.collection.options();
+                    options.label = 'bad';
+                    expect(this.collection.options().label).not.toEqual('bad', 'The tainted label');
+                });
+            });
             describe('create()', () => {
                 it('should return a promise that rejects if given bad data', () => {
                     return this.collection.create('bad').then(() => fail('create with bad data resolved'), () => Promise.resolve());

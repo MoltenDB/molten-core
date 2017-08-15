@@ -156,6 +156,10 @@ export const MoltenDB = (options) => {
         // As a collection instance will probably be short lived, should create the options
         // and get each store on creation of the collection instance.
         return {
+            options: () => {
+                /// TODO check if this is the best way
+                return JSON.parse(JSON.stringify(collectionOptions));
+            },
             create: (data) => {
                 if (storageKeys.length === 1) {
                     return storageConnection(collectionOptions.storage[storageKeys[0]].type)
