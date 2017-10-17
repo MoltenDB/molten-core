@@ -45,7 +45,7 @@ describe('MoltenDB instance', function() {
   };
 
   describe('createCollection()', () => {
-    it('should return a Promise that rejects on bad options', () => {
+    it('should return a promise that rejects if not given collection options', () => {
       const promise = this.mdb.createCollection('bad');
 
       expect(promise).toEqual(jasmine.any(Promise));
@@ -53,6 +53,19 @@ describe('MoltenDB instance', function() {
       return promise.then(
           () => fail('createCollection promise resolved instead of rejecting'),
           () => Promise.resolve());
+    });
+
+    it('should return a prmoise that rejects if given collcetion options with an unknown field type', () => {
+      let badCollection = JSON.parse(JSON.stringify(testCollection));
+      badCollection.fields.field1.type = 'unknown';
+
+      const promise = this.mdb.createCollection(badCollection);
+
+      return promise.then(
+          () => fail('createCollection promise resolved instead of rejecting'),
+          (error) => {
+            console.log('wow, it worked', error);
+            return Promise.resolve()});
     });
 
     it('should return a Promise that resolves when the collection has been created', () => {
@@ -139,19 +152,21 @@ describe('MoltenDB instance', function() {
       });
     });
 
-    xdescribe('getInternal()', () => {
+    describe('getInternal', () => {
       it('should not be iterable on the Molten Instance', () => {
         expect(Object.keys(this.mdb).indexOf('getInternal')).toEqual(-1, 'appears in object keys');
       });
 
-      it('should be a function', () => {
-        expect(this.mdb.getInternal).toEqual(jasmine.any(Function));
+      it('should be the internal instance', () => {
+        const internal = this.mdb.getInternal;
+        expect(internal).toEqual(jasmine.any(Object));
+        expect(internal.types).toEqual(jasmine.any(Object));
+        expect(internal.storageHasType).toEqual(jasmine.any(Function));
+        expect(internal.storageHasFeature).toEqual(jasmine.any(Function));
       });
 
-      xit('should return the internal instance', () => {
-        const internal = this.mdb.getInternal();
-
-        ///TODO
+      xit('should contain the database types', () => {
+        expect(this.mdb.getInternal.types).toEqual(jasmine.any(Object));
       });
     });
   });

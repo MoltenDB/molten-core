@@ -1,14 +1,17 @@
 import {createTestMoltenOptions, testCollection, testData} from './helpers/collection';
 import MoltenDB from '../';
 
+import * as MDB from '../../typings/moltendb';
+
 describe('MoltenDB collection instance', function() {
   const instanceTests = (description: string, collectionOptions: MDB.CollectionOptions) => {
-    describe(description, () => {
-      beforeEach(() => {
+    describe(description, function() {
+      beforeEach((done) => {
         return MoltenDB(createTestMoltenOptions()).then((mdb) => {
           return mdb.createCollection(testCollection);
         }).then((collection) => {
           this.collection = collection;
+          done();
         });
       });
 

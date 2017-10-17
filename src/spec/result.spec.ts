@@ -11,13 +11,13 @@ describe('Result', function() {
     }).then(() => {
       return this.collection.read();
     }).then((result) => {
-      this.allResult = result;
+      this.results = result;
     }).catch(fail);
   });
 
   describe('length', () => {
     it('should be the number of rows returned', () => {
-      expect(this.allResult.length).toEqual(Object.keys(testData).length,
+      expect(this.results.length).toEqual(Object.keys(testData).length,
           'number of testData items');
 
       return this.collection.read({_id: 'notin'}).then((result) => {
@@ -26,13 +26,19 @@ describe('Result', function() {
     });
   });
 
+  describe('raw()', () => {
+    it('should return an array of the raw results', () => {
+      expect(this.results.raw()).toEqual(testData);
+    });
+  });
+
   describe('row()', () => {
     it('should return a result instance for the given row', () => {
-      expect(this.allResult.row(0)).toBeDefined();
+      expect(this.results.row(0)).toBeDefined();
     });
 
     it('should return undefined when given an index above the number of rows returned', () => {
-      expect(this.allResult.row(Object.keys(testData).length)).not.toBeDefined();
+      expect(this.results.row(Object.keys(testData).length)).not.toBeDefined();
     });
   });
 

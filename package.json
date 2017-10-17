@@ -1,9 +1,9 @@
 {
   "name": "molten-core",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "MoltenDB core package",
   "main": "index.js",
-  "types": "src/typings/moltendb.d.ts",
+  "types": "typings/moltendb.d.ts",
   "scripts": {
     "test": "jasmine",
     "lint": "tslint src/**/*.ts && tsc --noEmit",
@@ -28,7 +28,7 @@
   "devDependencies": {
     "@types/jasmine": "^2.5.42",
     "jasmine-es6": "^0.4.0",
-    "molten-storage": "^0.2.0",
+    "molten-storage-json-crud": "https://github.com/MoltenDB/molten-storage-json-crud",
     "typescript": "^2.1.6"
   }
 }

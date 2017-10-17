@@ -1,5 +1,12 @@
-export const collectionsStoreOptions: MDB.Storage.StoreOptions = {
+import * as MDB from '../../typings/moltendb';
+
+export const collectionsStoreOptions: MDB.CollectionOptions = {
   name: 'collections',
+  storage: {
+    default: {
+      type: 'default'
+    }
+  },
   fields: {
     _id: {
       type: 'string',

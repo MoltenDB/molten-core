@@ -1,3 +1,5 @@
+import * as MDB from '../typings/moltendb';
+
 import baseCollectionsStoreOptions from './lib/collectionsStoreOptions';
 import baseTypes from 'molten-type-base';
 
@@ -30,7 +32,11 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
   // Create the mdb library instance
   let mdb: MDB.MoltenInternalInstance = {
     options,
-    types: {}
+    types: {},
+    storageHasType: (storage: string, type: MDB.FieldTypes): boolean =>
+        options.storage[storage] && options.storage[storage].connect.types.indexOf(type) !== -1,
+    storageHasFeature: (storage: string, feature: MDB.StorageFeatures): boolean =>
+        options.storage[storage] && options.storage[storage].connect.features.indexOf(feature) !== -1
   };
 
   // Create instances of types
@@ -45,7 +51,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
    *
    * @returns A promise resolving to the connection to the storage
    */
-  const storageConnection = (storage: string): Promise<MDB.Storage.StorageConnection> => {
+  const storageConnection = (storage: string): Promise<MDB.StorageConnection> => {
     const storageOptions = options.storage[storage];
 
     if (!storageOptions) {
@@ -98,12 +104,14 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
     // Get the collection information
     return storageConnection(options.collectionsStorage.storage).then((connection) => {
       return connection.getStore(collectionsStoreOptions);
-    }).then((store) => {
+    }).then((store: MDB.StoreInstance) => {
       return store.read({ _id: name });
     }).then((results) => {
       if (!results.length) {
         return;
       }
+
+      delete results[0]['_id'];
 
       return results[0];
     });
@@ -134,7 +142,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
    * @param storage Storage key to create the storage options for
    */
   const createStoreOptions = (collectionOptions: MDB.CollectionOptions, storageKey: string)
-    : MDB.Storage.StoreOptions => {
+    : MDB.StoreOptions => {
     if (!collectionOptions.storage || !collectionOptions.storage[storageKey]) {
       return undefined;
     }
@@ -147,7 +155,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
       const field = collectionOptions.fields[fieldName];
       if ((typeof field.storage === 'undefined' && storageKey === 'default')
           || (typeof field.storage === 'string' && field.storage === storageKey)
-          || field.storage instanceof Array && field.storage.indexOf(storageKey !== -1)) {
+          || field.storage instanceof Array && field.storage.indexOf(storageKey) !== -1) {
         const field = collectionOptions.fields[fieldName];
         fields = Object.assign(fields, mdb.types[field.type].schema(fieldName, collectionOptions));
       }
@@ -161,6 +169,77 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
       };
     }
   };
+
+  /**
+   * Cleans to given data to be saved into the given collection for each
+   * individual store
+   *
+   * @param collectionOptions Collection options for the collecion that the
+   *   data is for
+   * @param data Data to store
+   *
+   * @returns An Object containing the data for each store in the given
+   *   collection. The data for each store will be given in the same format
+   *   as the given data (a single item object or an array of item objects)
+   */
+  const createDataForStores = (collectionOptions, data: MDB.Data | MDB.Data[]): { [store: string]: any } => {
+    const storageKeys = Object.keys(collectionOptions.storage);
+
+    let cleanedData = {};
+    let cleanedIds = [];
+
+    if (data instanceof Array) {
+      data.forEach((item) => {
+        // Stores an item object for each storage the item is stored in
+        let cleanedItem = {};
+        Object.keys(collectionOptions.fields).forEach((fieldKey) => {
+          const field = collectionOptions.fields[fieldKey];
+          if (typeof item[fieldKey] !== 'undefined') {
+            let fieldData;
+            let storage;
+            if (field.storage) {
+              storage = field.storage
+            } else  if (typeof collectionOptions.storage.default !== 'undefined') {
+              storage = 'default';
+            } else {
+              storage = storageKeys[0];
+            }
+
+            if (typeof cleanedItem[storage] === 'undefined') {
+              cleanedItem[storage] = {};
+            }
+            Object.assign(cleanedItem[storage], mdb.types[field.type].store(fieldKey,
+                collectionOptions, storage, item[fieldKey]));
+          }
+        });
+
+        cleanedIds.push(item._id);
+
+        // Ensure the id is in each storage
+        // Will need to generate one somehow if none is set
+        // Could change this to be the "primary key field"
+        let field = collectionOptions.fields._id;
+        Object.keys(cleanedItem).forEach((storage) => {
+          if (typeof cleanedItem[storage]._id === 'undefined') {
+            Object.assign(cleanedItem[storage], mdb.types[field.type].store(field.name,
+                collectionOptions, storage, item[field.name]));
+          }
+
+          // Add to the cleaned data
+          if (typeof cleanedData[storage] === 'undefined') {
+            cleanedData[storage] = [];
+          }
+          cleanedData[storage].push(cleanedItem[storage]);
+        });
+      });
+
+      return {
+        cleanedIds,
+        cleanedData
+      };
+    }
+  };
+
 
   /**
    * Creates a collection instance for the given collectionOptions
@@ -185,33 +264,98 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
         return JSON.parse(JSON.stringify(collectionOptions));
       },
       create: (data: MDB.Data | MDB.Data[]): Promise<MDB.Id[]> => {
-        if (storageKeys.length === 1) {
-          return storageConnection(collectionOptions.storage[storageKeys[0]].type)
-          .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]]))
-          .then((store) => store.create(data));
-        } else {
-          // TODO
+        if (typeof data !== 'object') {
+          return Promise.reject(new Error('bad data given to create'));
         }
+
+        const { cleanedIds, cleanedData } = createDataForStores(collectionOptions, data);
+        let promises = [];
+
+        Object.keys(cleanedData).forEach((storage) => {
+          promises.push(storageConnection(collectionOptions.storage[storage].type)
+          .then((connection) => connection.getStore(collectionOptions.storage[storage]))
+          .then((store) => store.create(cleanedData[storage])));
+        });
+
+        // TODO Need to handle failures to stop inconsistent states
+        return Promise.all(promises).then(() => cleanedIds);
       },
       read: (filter?: MDB.Filter, options?: MDB.FilterOptions): Promise<MDB.Result> => {
         if (['undefined', 'object'].indexOf(typeof filter) === -1) {
           return Promise.reject(new Error('Invalid filter'));
         }
+
+        /**
+         * Creates a ResultRow instance using the given data
+         *
+         * @param item Item for the ResultRow
+         *
+         * @returns ResultRow instance
+         */
+        const createResultInstance = (item: MDB.Data): MDB.ResultRow => {
+          let resultInstance = {};
+
+          //TODO Should only return the fields that are included in the result
+          Object.keys(collectionOptions.fields).forEach((field) => {
+            const fieldOptions = collectionOptions.fields[field];
+            resultInstance[field] = mdb.types[fieldOptions.type].instance(field, collectionOptions, resultInstance, item);
+          });
+
+          return resultInstance;
+        };
+
+        /**TODO If there are multiple storage engines, could run through the
+         * list of fields to get to determine which storage engine is the best
+         * to contact - it may be that one has everything needed in it.
+         *
+         * Will need to be able to go to each field and get the raw fields they
+         * are expecting back for the chosen storage so they can be returned
+         * properly
+         *
+         * Will need the collectionOptions if we are going to have a global
+         * multi-lingual option?
+         *
+         * TODO Make a list of the what actions the module is going to have
+         * done to it/by it and ensure that the functionality exists to do
+         * that, eg for types:
+         *   - create for storing a value of the type in the given storage
+         *   - returning what fields need to be retrieved to get the value
+         *   - validate a new value given the existing values of the other
+         *     fields
+         *   - create what needs to be stored in the given storage for a given
+         *     value
+         */
         if (storageKeys.length === 1) {
+          // TODO Need to create a storage configuration objec with name and type to pass to getStore
           return storageConnection(collectionOptions.storage[storageKeys[0]].type)
           .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]]))
           .then((store) => {
             return store.read(filter, options); })
           .then((results) => {
+            const createResultRow = (index: number): MDB.ResultRow => {
+              if (index < results.length) {
+                return createResultInstance(results[index]);
+              } else {
+                return;
+              }
+            };
+
             return {
               length: results.length,
-              row: (index: number): MDB.Data => {
-                if (index < results.length) {
-                  return createResultInstance(collectionOptions, results[index]);
-                } else {
-                  return;
+              raw: (): MDB.Data[] => {
+                let data = [];
+                for (let i = 0; i < results.length; i++) {
+                  let item = {};
+                  const row = createResultRow(i);
+                  Object.keys(row).forEach((field) => {
+                    item[field] = row[field].valueOf();
+                  });
+                  data.push(item);
                 }
+
+                return data;
               },
+              row: createResultRow,
             };
           });
         } else {
@@ -230,17 +374,22 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
           // TODO
         }
       },
-      update: (data: Data | Data[], filter?: MDB.Filter) => {
+      update: (data: MDB.Data | MDB.Data[], filter?: MDB.Filter) => {
         if (['undefined', 'object'].indexOf(typeof filter) === -1) {
           return Promise.reject(new Error('Invalid filter'));
         }
-        if (storageKeys.length === 1) {
-          return storageConnection(collectionOptions.storage[storageKeys[0]].type)
-          .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]].name))
-          .then((store) => store.update(data, filter));
-        } else {
-          // TODO
-        }
+        // Clean the data for storage
+        const { cleanedIds, cleanedData } = createDataForStores(collectionOptions, data);
+        // TODO Have to clean the filter data as well
+        let promises = [];
+
+        Object.keys(cleanedData).forEach((storage) => {
+          promises.push(storageConnection(collectionOptions.storage[storage].type)
+          .then((connection) => connection.getStore(collectionOptions.storage[storage]))
+          .then((store) => store.update(cleanedData[storage], filter)));
+        });
+
+        return Promise.all(promises).then(() => cleanedIds);
       },
       delete: (filter?: MDB.Filter): Promise<number> => {
         if (['undefined', 'object'].indexOf(typeof filter) === -1) {
@@ -248,7 +397,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
         }
         if (storageKeys.length === 1) {
           return storageConnection(collectionOptions.storage[storageKeys[0]].type)
-          .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]].name))
+          .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]]))
           .then((store) => store.delete(filter));
         } else {
           // TODO
@@ -257,22 +406,6 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
     };
   };
 
-  const createResultInstance = (collectionOptions: MDB.CollectionOptions,
-      item: MDB.Data): MDB.ResultRow => {
-    let resultInstance = {};
-
-    Object.defineProperty(resultInstance, 'collectionOptions', {
-      value: collectionOptions,
-      iterable: false
-    });
-
-    Object.keys(collectionOptions.fields).forEach((field) => {
-      const fieldOptions = collectionOptions.fields[field];
-      resultInstance[field] = mdb.types[fieldOptions.type].instance(field, resultInstance, item);
-    });
-
-    return resultInstance;
-  };
 
   // Check that the collections storage and collection is set up
   return storageConnection(options.collectionsStorage.storage).then((connection) => {
@@ -290,11 +423,21 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
         });
       }
     }).then(() => {
-      return {
+      let instance = {
         createCollection: (collectionOptions) => {
           return getCollectionOptions(collectionOptions.name).then((currentOptions) => {
             if (typeof currentOptions !== 'undefined') {
               return Promise.reject(new Error(`Collection ${collectionOptions.name} already exists`));
+            }
+
+            // Check field types are valid
+            let badFieldName;
+            if ((badFieldName = Object.keys(collectionOptions.fields).find((fieldName) => {
+              const field = collectionOptions.fields[fieldName];
+              return typeof mdb.types[field.type] === 'undefined';
+            }))) {
+              const badField = collectionOptions.fields[badFieldName];
+              return Promise.reject(new Error(`${badFieldName} has an unknown type ${badField.type}`));
             }
 
             // Create the stores for the collection
@@ -435,8 +578,15 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
           });
         }
       };
+
+      Object.defineProperty(instance, 'getInternal', {
+        value: mdb,
+        enumerable: false,
+        writable: false
+      });
+
+      return instance;
     });
   });
-
 };
 export default MoltenDB;

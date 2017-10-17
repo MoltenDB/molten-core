@@ -1,4 +1,5 @@
 import createJsonCrudDatabase from 'molten-storage-json-crud';
+import MoltenDb from '../../index'
 
 export const createTestMoltenOptions = () => {
   return {
@@ -20,7 +21,7 @@ export const createTestMoltenOptions = () => {
     },
     collectionsStorage: {
       storage: 'testStorage',
-      table: 'collections'
+      collection: 'collections'
     }
   };
 };
