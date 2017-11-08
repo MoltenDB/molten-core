@@ -33,10 +33,31 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
   let mdb: MDB.MoltenInternalInstance = {
     options,
     types: {},
-    storageHasType: (storage: string, type: MDB.FieldTypes): boolean =>
-        options.storage[storage] && options.storage[storage].connect.types.indexOf(type) !== -1,
-    storageHasFeature: (storage: string, feature: MDB.StorageFeatures): boolean =>
-        options.storage[storage] && options.storage[storage].connect.features.indexOf(feature) !== -1
+    storageHasType: (storage: string, types: string | Array<string>): boolean => {
+      if (!options.storage[storage]) {
+        return false;
+      }
+      if (types instanceof Array) {
+        const storageTypes = options.storage[storage].connect.types;
+        return typeof types.find((type) =>
+            storageTypes.indexOf(type) === -1) === 'undefined';
+      } else {
+        return options.storage[storage].connect.types.indexOf(types) !== -1;
+      }
+    },
+    storageHasFeature: (storage: string,
+        features: MDB.StorageFeatures | Array<MDB.StorageFeatures>): boolean => {
+      if (!options.storage[storage]) {
+        return false;
+      }
+      if (features instanceof Array) {
+        const storageFeatures = options.storage[storage].connect.features;
+        return typeof features.find((feature) =>
+            storageFeatures.indexOf(feature) === -1) === 'undefined';
+      } else {
+        return options.storage[storage].connect.features.indexOf(features) !== -1
+      }
+    }
   };
 
   // Create instances of types
@@ -136,6 +157,24 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
   };
 
   /**
+   * Get the store instance for a store used by the collection with the given
+   * collection options.
+   *
+   * @param collectionOptions Collection options for the collection to get the
+   *   store for
+   * @param storage ID of the storage to get the store from
+   *
+   * @returns The store instance
+   */
+  const getStore = (collectionOptions: MDB.CollectionOptions, storage: string)
+      : Promise<MDB.StoreInstance> => {
+    const storeOptions = createStoreOptions(collectionOptions, storage);
+    return storageConnection(collectionOptions.storage[storage].type)
+    .then((connection) => connection.getStore(storeOptions));
+  };
+
+
+  /**
    * Create store options for the given storage of the given collection
    *
    * @param collectionOptions Collection options to create the storage options for
@@ -143,6 +182,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
    */
   const createStoreOptions = (collectionOptions: MDB.CollectionOptions, storageKey: string)
     : MDB.StoreOptions => {
+
     if (!collectionOptions.storage || !collectionOptions.storage[storageKey]) {
       return undefined;
     }
@@ -164,7 +204,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
     if (Object.keys(fields).length) {
       return {
         ...storage.options,
-        name: storage.name,
+        name: storage.collection,
         fields
       };
     }
@@ -272,9 +312,8 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
         let promises = [];
 
         Object.keys(cleanedData).forEach((storage) => {
-          promises.push(storageConnection(collectionOptions.storage[storage].type)
-          .then((connection) => connection.getStore(collectionOptions.storage[storage]))
-          .then((store) => store.create(cleanedData[storage])));
+          promises.push(getStore(collectionOptions, storage)
+              .then((store) => store.create(cleanedData[storage])));
         });
 
         // TODO Need to handle failures to stop inconsistent states
@@ -298,7 +337,10 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
           //TODO Should only return the fields that are included in the result
           Object.keys(collectionOptions.fields).forEach((field) => {
             const fieldOptions = collectionOptions.fields[field];
-            resultInstance[field] = mdb.types[fieldOptions.type].instance(field, collectionOptions, resultInstance, item);
+            resultInstance[field] = mdb.types[fieldOptions.type].instance(field,
+                collectionOptions,
+                (storageKeys.length === 1 ? storageKeys[0] : 'TODO'),
+                resultInstance, item);
           });
 
           return resultInstance;
@@ -327,8 +369,7 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
          */
         if (storageKeys.length === 1) {
           // TODO Need to create a storage configuration objec with name and type to pass to getStore
-          return storageConnection(collectionOptions.storage[storageKeys[0]].type)
-          .then((connection) => connection.getStore(collectionOptions.storage[storageKeys[0]]))
+          return getStore(collectionOptions, storageKeys[0])
           .then((store) => {
             return store.read(filter, options); })
           .then((results) => {
@@ -430,6 +471,11 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
               return Promise.reject(new Error(`Collection ${collectionOptions.name} already exists`));
             }
 
+            // Ensure that the _id field is present
+            if (typeof collectionOptions.fields._id === 'undefined') {
+              return Promise.reject(new Error(`Collection must have an '_id' field`));
+            }
+
             // Check field types are valid
             let badFieldName;
             if ((badFieldName = Object.keys(collectionOptions.fields).find((fieldName) => {
@@ -501,7 +547,15 @@ export const MoltenDB = (options: MDB.MoltenDBOptions): Promise<MDB.MoltenDBInst
           });
         },
         collectionOptions: getCollectionOptions,
-        checkCollection: (name) => {
+        checkCollection: (collection) => {
+          let name;
+
+          if (typeof collection === 'string') {
+            name = collection;
+          } else {
+            name = collection.name;
+          }
+
           return getCollectionOptions(name).then((collectionOptions) => {
             if (typeof collectionOptions === 'undefined') {
               return;

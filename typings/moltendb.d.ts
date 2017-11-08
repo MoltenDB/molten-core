@@ -63,13 +63,13 @@ declare namespace MDB {
     /**
      * Checks for the existence and the validity of the given collection
      *
-     * @param name The name of the collection to check
+     * @param collection The name or options of the collection to check
      *
      * @returns A promise that will resolve to true if the collection exists
      *   and is valid, false if the collection exists, but it not valid, and
      *   undefined if the collection does not exist
      */
-    checkCollection: (name: string) => Promise<boolean|undefined>,
+    checkCollection: (collection: string | CollectionOptions) => Promise<boolean|undefined>,
 
     /**
      * Updates an existing collection
@@ -99,8 +99,24 @@ declare namespace MDB {
     types: {
       [typeId: string]: MDB.Type
     },
-    storageHasType: (storage: string, type: string) => boolean,
-    storageHasFeature: (storage: string, feature: string) => boolean
+    /**
+     * Check if a storage has a field type or types
+     *
+     * @param storage ID of the storage engine to check
+     * @param type Type(s) to check the storage for
+     *
+     * @returns Whether or not the storage has the given field type(s)
+     */
+    storageHasType: (storage: string, type: string | Array<string>) => boolean,
+    /**
+     * Check if a storage has a field feature or fetures
+     *
+     * @param storage ID of the storage engine to check
+     * @param feature Feature(s) to check the storage for
+     *
+     * @returns Whether or not the storage has the given field features(s)
+     */
+    storageHasFeature: (storage: string, feature: string | Array<string>) => boolean
   }
 
   export type Data = { [key: string]: any };
@@ -135,10 +151,16 @@ declare namespace MDB {
   }
 
   export interface FilterOptions {
+    /// Fields to retrieve
+    fields?: Array<string>
+    /// Fields to sort the data on
     sort?: {
       [field: string]: 1 | -1
     },
+    /// Number of items to return
     limit?: number
+    /// First item to return (starting from 0)
+    start?: number
   }
 
   export interface ResultField {
@@ -272,9 +294,16 @@ declare namespace MDB {
 
   /// Definition of a Field in a MoltenDB Collection
   export interface Field extends CollectionObject {
+    /// The field type
     type: string,
+    /// The storage to store the field in
     storage?: string | string[],
+    /// Whether the field is required
     required?: boolean,
+    /// If the field should accept multiple values
+    multiple?: boolean,
+    /// If the multiple values should be stored in a key/value map
+    object?: boolean,
     [option: string]: any
   }
 
@@ -312,7 +341,7 @@ declare namespace MDB {
 // Storage-related declarations
 declare namespace MDB {
   /// Types that the Storage could support
-  export type FieldTypes = 'string' | 'number' | 'array' | 'object' | 'boolean';
+  export type FieldTypes = string;
 
   /// Feature that the Storage could support
   export type StorageFeatures =
@@ -355,7 +384,6 @@ declare namespace MDB {
   }
 
   export interface StorageObject {
-    name: string,
     label?: string,
     description?: string
   }
@@ -370,13 +398,15 @@ declare namespace MDB {
   }
 
   export interface KeyValueStoreOptions extends StorageObject {
+    name: string,
     type: 'keyValue'
   }
 
   /// Definition of a store in a storage
   export interface ItemStoreOptions extends StorageObject {
+    name: string,
     type: 'store',
-    fields: StoreField[],
+    fields: { [fieldId: string]: StoreField },
   }
 
   export type StoreOptions = ItemStoreOptions | KeyValueStoreOptions;

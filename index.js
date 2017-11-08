@@ -36,11 +36,33 @@ exports.MoltenDB = function (options) {
     var mdb = {
         options: options,
         types: {},
-        storageHasType: function (storage, type) {
-            return options.storage[storage] && options.storage[storage].connect.types.indexOf(type) !== -1;
+        storageHasType: function (storage, types) {
+            if (!options.storage[storage]) {
+                return false;
+            }
+            if (types instanceof Array) {
+                var storageTypes_1 = options.storage[storage].connect.types;
+                return typeof types.find(function (type) {
+                    return storageTypes_1.indexOf(type) === -1;
+                }) === 'undefined';
+            }
+            else {
+                return options.storage[storage].connect.types.indexOf(types) !== -1;
+            }
         },
-        storageHasFeature: function (storage, feature) {
-            return options.storage[storage] && options.storage[storage].connect.features.indexOf(feature) !== -1;
+        storageHasFeature: function (storage, features) {
+            if (!options.storage[storage]) {
+                return false;
+            }
+            if (features instanceof Array) {
+                var storageFeatures_1 = options.storage[storage].connect.features;
+                return typeof features.find(function (feature) {
+                    return storageFeatures_1.indexOf(feature) === -1;
+                }) === 'undefined';
+            }
+            else {
+                return options.storage[storage].connect.features.indexOf(features) !== -1;
+            }
         }
     };
     // Create instances of types
@@ -125,12 +147,28 @@ exports.MoltenDB = function (options) {
         });
     };
     /**
+     * Get the store instance for a store used by the collection with the given
+     * collection options.
+     *
+     * @param collectionOptions Collection options for the collection to get the
+     *   store for
+     * @param storage ID of the storage to get the store from
+     *
+     * @returns The store instance
+     */
+    var getStore = function (collectionOptions, storage) {
+        var storeOptions = createStoreOptions(collectionOptions, storage);
+        return storageConnection(collectionOptions.storage[storage].type)
+            .then(function (connection) { return connection.getStore(storeOptions); });
+    };
+    /**
      * Create store options for the given storage of the given collection
      *
      * @param collectionOptions Collection options to create the storage options for
      * @param storage Storage key to create the storage options for
      */
     var createStoreOptions = function (collectionOptions, storageKey) {
+        console.log('createStoreOptions', collectionOptions);
         if (!collectionOptions.storage || !collectionOptions.storage[storageKey]) {
             return undefined;
         }
@@ -145,8 +183,10 @@ exports.MoltenDB = function (options) {
                 fields = Object.assign(fields, mdb.types[field_1.type].schema(fieldName, collectionOptions));
             }
         });
+        console.log('storage', storage, storage.collection);
+        console.log('madeCollectionOptions', __assign({}, storage.options, { name: storage.collection, fields: fields }));
         if (Object.keys(fields).length) {
-            return __assign({}, storage.options, { name: storage.name, fields: fields });
+            return __assign({}, storage.options, { name: storage.collection, fields: fields });
         }
     };
     /**
@@ -238,8 +278,7 @@ exports.MoltenDB = function (options) {
                 var _a = createDataForStores(collectionOptions, data), cleanedIds = _a.cleanedIds, cleanedData = _a.cleanedData;
                 var promises = [];
                 Object.keys(cleanedData).forEach(function (storage) {
-                    promises.push(storageConnection(collectionOptions.storage[storage].type)
-                        .then(function (connection) { return connection.getStore(collectionOptions.storage[storage]); })
+                    promises.push(getStore(collectionOptions, storage)
                         .then(function (store) { return store.create(cleanedData[storage]); }));
                 });
                 // TODO Need to handle failures to stop inconsistent states
@@ -249,6 +288,7 @@ exports.MoltenDB = function (options) {
                 if (['undefined', 'object'].indexOf(typeof filter) === -1) {
                     return Promise.reject(new Error('Invalid filter'));
                 }
+                console.log('read called', collectionOptions, filter);
                 /**
                  * Creates a ResultRow instance using the given data
                  *
@@ -261,7 +301,7 @@ exports.MoltenDB = function (options) {
                     //TODO Should only return the fields that are included in the result
                     Object.keys(collectionOptions.fields).forEach(function (field) {
                         var fieldOptions = collectionOptions.fields[field];
-                        resultInstance[field] = mdb.types[fieldOptions.type].instance(field, collectionOptions, resultInstance, item);
+                        resultInstance[field] = mdb.types[fieldOptions.type].instance(field, collectionOptions, (storageKeys.length === 1 ? storageKeys[0] : 'TODO'), resultInstance, item);
                     });
                     return resultInstance;
                 };
@@ -288,8 +328,7 @@ exports.MoltenDB = function (options) {
                  */
                 if (storageKeys.length === 1) {
                     // TODO Need to create a storage configuration objec with name and type to pass to getStore
-                    return storageConnection(collectionOptions.storage[storageKeys[0]].type)
-                        .then(function (connection) { return connection.getStore(collectionOptions.storage[storageKeys[0]]); })
+                    return getStore(collectionOptions, storageKeys[0])
                         .then(function (store) {
                         return store.read(filter, options);
                     })
@@ -393,6 +432,10 @@ exports.MoltenDB = function (options) {
                         if (typeof currentOptions !== 'undefined') {
                             return Promise.reject(new Error("Collection " + collectionOptions.name + " already exists"));
                         }
+                        // Ensure that the _id field is present
+                        if (typeof collectionOptions.fields._id === 'undefined') {
+                            return Promise.reject(new Error("Collection must have an '_id' field"));
+                        }
                         // Check field types are valid
                         var badFieldName;
                         if ((badFieldName = Object.keys(collectionOptions.fields).find(function (fieldName) {
@@ -455,7 +498,14 @@ exports.MoltenDB = function (options) {
                     });
                 },
                 collectionOptions: getCollectionOptions,
-                checkCollection: function (name) {
+                checkCollection: function (collection) {
+                    var name;
+                    if (typeof collection === 'string') {
+                        name = collection;
+                    }
+                    else {
+                        name = collection.name;
+                    }
                     return getCollectionOptions(name).then(function (collectionOptions) {
                         if (typeof collectionOptions === 'undefined') {
                             return;
